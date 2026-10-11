@@ -86,8 +86,8 @@ sequenceDiagram
 | Phase | CLI | Network | Timeout | Measured |
 | --- | --- | --- | --- | --- |
 | Fetch | `sandbox do --allow-egress --write --export-tar=<tmp>/fetch.tar -- bash -c FETCH_SCRIPT` | Allowed | 600 s overall; clone and install 300 s each | 9–23 s (npm projects), 89 s (Python venv + pip) |
-| Start | `sandbox run <id> --write --import-tar=<tar> --detach -- sleep 1800` | Blocked | 60 s | 0.1–0.7 s |
-| Verify | `sandbox exec <id> -- ...` (exit codes, test runner, grep) | Blocked | tests 300 s | 0.3–2.4 s |
+| Start | `sandbox run <id> --write --import-tar=<tar> --detach -- sleep 1800` | Blocked | 60 s | 0.6–1.4 s |
+| Verify | `sandbox exec <id> -- ...` (exit codes, test runner, grep) | Blocked | tests 300 s | 0.4–3.9 s |
 | Judge | `sandbox exec` for each model tool call | Blocked | 30 s per read, 120 s per command | 48–91 s |
 | Delete | `sandbox delete <id> --force`, in `finally` | | 60 s | ~20 ms |
 

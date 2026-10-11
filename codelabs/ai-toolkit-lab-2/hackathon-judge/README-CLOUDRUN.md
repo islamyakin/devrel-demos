@@ -159,7 +159,7 @@ GOOGLE_CLOUD_PROJECT=p TASKS_SUBSCRIPTION=s RESULTS_TOPIC=t USE_MOCK_PUBSUB=true
   ~0.1 s.
 - Smoke test: tests detected and FAILED, 2 injection markers, total 2/30.
 - 8 seeded TypeScript projects judged through the UI/API, all `success`. Per submission: fetch
-  9–23 s, start 0.1–0.7 s, verify < 2.5 s, model 48–91 s, total 63–112 s.
+  9–23 s (median 15), start 0.6–1.4 s, verify 0.4–3.9 s, model 48–91 s (median 68), total 63–112 s (median 83).
 - `--export-tar` works when the script exits normally (207 MB tar for a 193 MB `node_modules`
   workspace), and writes nothing usable when the sandbox process is killed.
 
