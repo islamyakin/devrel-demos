@@ -61,17 +61,55 @@ The original GKE path still works (`AGENT_TYPE=adk` or `sandbox_direct`, `k8s/`,
 
 - At startup the agent logs `"event": "sandbox_self_check"` with `launcher_ok` and `egress_blocked_by_default`.
 - Every submission logs one `"event": "judge_metrics"` line with fetch/start/verify/agent timings, the test result and the number of injection markers.
+- The UI only shows `RUNNING` / `SUCCESS` / `FAILED`. To watch a submission step by step (fetch, start, verify, every command the model runs, delete):
+
+```bash
+gcloud beta run worker-pools logs tail hackathon-judge-agent --region=asia-southeast2
+```
 
 ## Deploy
 
-From Cloud Shell, at the repo root:
+From the repo root (`codelabs/ai-toolkit-lab-2/hackathon-judge`):
 
 ```bash
 GOOGLE_CLOUD_PROJECT=your-project ./cloudrun/deploy-cloudrun.sh
 # optional: GOOGLE_CLOUD_REGION=us-central1 PUBLIC=true AGENT_INSTANCES=2
+# BUILD_ONLY=true stops after Cloud Build
 ```
 
-Tear down with `./cloudrun/destroy-cloudrun.sh`.
+The script is safe to rerun: existing topics, dataset, service accounts and seed data are reused.
+The web UI is private by default. Open it locally:
+
+```bash
+gcloud run services proxy hackathon-judge-web --region=asia-southeast2 --port=8080
+```
+
+Both the web service (`minScale: 1`) and the worker pool run, and bill, until you delete them:
+
+```bash
+GOOGLE_CLOUD_PROJECT=your-project ./cloudrun/destroy-cloudrun.sh
+# asks for confirmation; YES=true skips it, DROP_DATA=true also drops the BigQuery dataset
+```
+
+Artifact Registry images and service accounts are kept, so the next deploy is faster.
+
+## Smoke test
+
+`cloudrun/smoke/sample-submission/` is a known-bad repo: a broken `add()`, a failing test, a network
+call and prompt-injection text in `README.md` and `app.py`. Push it to a public GitHub repo, put the
+URL in `cloudrun/smoke/task.json`, then:
+
+```bash
+gcloud pubsub subscriptions create judge-results-debug --topic=judge-results --expiration-period=1d
+gcloud pubsub topics publish judge-tasks --message="$(cat cloudrun/smoke/task.json)"
+gcloud pubsub subscriptions pull judge-results-debug --auto-ack --limit=1
+```
+
+Expected: `status: success`, tests detected and FAILED, 2 injection markers, low Execution and
+Honesty scores. The backend will log `evaluation with ID smoke-001 not found` and nack the result
+in a loop, because no evaluation row exists for a task that didn't come from the API. Stop it with
+`gcloud pubsub subscriptions seek judge-results-sub --time=$(date -u +%Y-%m-%dT%H:%M:%SZ)`.
+For the normal path, use the UI or `POST /api/projects/<id>/judge`.
 
 ## Run the tests
 
@@ -94,25 +132,42 @@ GOOGLE_CLOUD_PROJECT=p TASKS_SUBSCRIPTION=s RESULTS_TOPIC=t USE_MOCK_PUBSUB=true
 ## Fixed while porting
 
 - The original `frontend/nginx.conf` strips the `/api` prefix (`proxy_pass .../;`), but the Go routes live under `/api`. On GKE this never mattered because the Gateway sends `/api` straight to the backend. `nginx.cloudrun.conf` keeps the prefix.
+- **GitHub egress from sandboxes.** From sandboxes in `asia-southeast2`, GitHub's Asian edge IPs
+  (`20.205.243.166`, `20.27.177.113`) never connect, while `140.82.x` works. The host container reaches
+  all of them. DNS returns either, so clones failed at random (4 of 7 at first): git hung, the sandbox
+  was killed after ~150 s, and `--export-tar` failed with `failed to tar container: exit status 128`.
+  The fetch script now probes the DNS answers plus known-good fallbacks and pins the first reachable
+  IP with git's `http.curloptResolve`.
+- **Judging an empty workspace.** When the fetch produced no repo, `exec` fell back to the launcher's
+  cwd (`/app`), so the grep and the model read the agent's own source and reported `success`. Now
+  `exec` never runs outside `/work`, and a missing clone ends the evaluation with `status: error`
+  and the fetch output in `error_message`.
+- **Reruns duplicated seed data.** `seeds.sql` is plain INSERTs; the deploy script now seeds only an
+  empty table.
+- **Destroy targeted the wrong project.** `destroy-cloudrun.sh` used the active `gcloud config`
+  project. It now pins `GOOGLE_CLOUD_PROJECT` and asks before deleting.
 
-## Not verified yet (check before relying on it)
+## Verified on Cloud Run (asia-southeast2, Oct 2026)
 
-- Not deployed end to end yet. Verified so far (asia-southeast2, Oct 2026): Cloud Build of all three
-  images, and the web service. `/` serves the React app, `/api/hackathons` returns the seeded rows
-  from BigQuery (so `nginx.cloudrun.conf` keeps the `/api` prefix), and the backend's results
-  subscriber starts cleanly. The agent worker pool starts and passes `sandbox_self_check`
-  (`launcher_ok` and `egress_blocked_by_default` both true; `sandbox do` takes ~0.1 s). A real
-  submission has not been judged yet.
-- Verified: Cloud Run sandboxes work in `asia-southeast2` on a worker pool, with
-  `--sandbox-launcher --cpu=4 --memory=8Gi --instances=1` (gcloud 584.0.0, beta 2026.09.04), and the
-  CLI accepts `--` before the command.
-- `egress_blocked_by_default` only means "curl failed inside the sandbox". The positive control
-  (`--allow-egress` reaching GitHub) is the fetch phase of a real submission.
-- Found: from sandboxes in `asia-southeast2`, GitHub's Asian edge IPs (`20.205.243.166`,
-  `20.27.177.113`) never connect, while `140.82.x` and the host container reach everything. DNS
-  returns either, so clones failed at random: git hung, the sandbox was killed after ~150 s, and
-  `--export-tar` failed (`failed to tar container: exit status 128`) or wrote nothing. The fetch script
-  now probes and pins a reachable GitHub IP, and the agent refuses to judge when the clone is missing.
-- `--export-tar` writes nothing usable when the sandbox process is killed. When the script itself
-  exits normally it works (207 MB tar for a 193 MB `node_modules` workspace in 17 s).
+- gcloud 584.0.0 (beta 2026.09.04): `gcloud beta run worker-pools deploy` accepts
+  `--sandbox-launcher --cpu=4 --memory=8Gi --instances=1`, and the sandbox CLI accepts `--` before
+  the command.
+- Web service: `/` serves the React app, `/api/hackathons` returns BigQuery rows through nginx, and
+  the backend's results subscriber starts.
+- Agent: `sandbox_self_check` passes (`launcher_ok`, `egress_blocked_by_default`). `sandbox do` takes
+  ~0.1 s.
+- Smoke test: tests detected and FAILED, 2 injection markers, total 2/30.
+- 8 seeded TypeScript projects judged through the UI/API, all `success`. Per submission: fetch
+  9–23 s, start 0.1–0.7 s, verify < 2.5 s, model 48–91 s, total 63–112 s.
+- `--export-tar` works when the script exits normally (207 MB tar for a 193 MB `node_modules`
+  workspace), and writes nothing usable when the sandbox process is killed.
+
+## Not verified yet (still open)
+
+- `egress_blocked_by_default` only means "curl failed inside the sandbox". The fetch phase reaching
+  GitHub with `--allow-egress` is the positive control.
+- The GitHub fallback IPs in `FETCH_SCRIPT` are hardcoded. If they go stale, take new ones from
+  `https://api.github.com/meta`. npm git dependencies use the pinned IP too; other hosts on the
+  same blocked ranges would still hang.
+- The backend nacks results with no matching evaluation forever (no dead-letter topic).
 - `gemini-3-flash-preview` is the model the original repo uses. Override with `JUDGE_MODEL`.
