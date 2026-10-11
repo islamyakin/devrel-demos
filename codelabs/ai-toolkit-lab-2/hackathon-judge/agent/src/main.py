@@ -28,8 +28,6 @@ import os
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 
-from src.adapters.outbound.sandbox_direct import SandboxDirectAdapter
-from src.adapters.outbound.adk_agent import ADKAgentAdapter
 from src.adapters.outbound.pubsub_publisher import PubSubPublisherAdapter, MockPubSubPublisherAdapter
 from src.adapters.inbound.pubsub_subscriber import BackgroundSubscriber
 
@@ -50,15 +48,22 @@ PROJECT_ID = get_required_env("GOOGLE_CLOUD_PROJECT")
 TASKS_SUBSCRIPTION = get_required_env("TASKS_SUBSCRIPTION")
 RESULTS_TOPIC = get_required_env("RESULTS_TOPIC")
 USE_MOCK = os.getenv("USE_MOCK_PUBSUB", "false").lower() == "true"
-AGENT_TYPE = os.getenv("AGENT_TYPE", "sandbox_direct").lower()
+AGENT_TYPE = os.getenv("AGENT_TYPE", "cloudrun").lower()
 
-# Dependency Injection setup
-if AGENT_TYPE == "adk":
+# Dependency Injection setup. Imports are lazy so the Cloud Run image does not
+# need the GKE-only k8s_agent_sandbox client.
+if AGENT_TYPE == "cloudrun":
+    from src.adapters.outbound.cloudrun_judge import CloudRunJudgeAdapter
+    agent_service = CloudRunJudgeAdapter()
+    print("Using CloudRunJudgeAdapter (Cloud Run sandboxes).")
+elif AGENT_TYPE == "adk":
+    from src.adapters.outbound.adk_agent import ADKAgentAdapter
     agent_service = ADKAgentAdapter()
-    print("Using ADKAgentAdapter.")
+    print("Using ADKAgentAdapter (GKE Agent Sandbox).")
 else:
+    from src.adapters.outbound.sandbox_direct import SandboxDirectAdapter
     agent_service = SandboxDirectAdapter()
-    print("Using SandboxDirectAdapter.")
+    print("Using SandboxDirectAdapter (GKE Agent Sandbox).")
 
 if USE_MOCK:
     publisher = MockPubSubPublisherAdapter()
@@ -79,6 +84,8 @@ else:
 async def lifespan(app: FastAPI):
     # Startup
     print("Starting up Hackathon Judge Agent...")
+    if hasattr(agent_service, "self_check"):
+        await agent_service.self_check()
     await subscriber.start()
     print("Hackathon Judge Agent started.")
     yield
