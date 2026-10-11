@@ -161,6 +161,7 @@ class CloudRunSandbox:
         self._tmpdir = tempfile.mkdtemp(prefix="judge-")
         self._tar = os.path.join(self._tmpdir, "fetch.tar")
         self.started = False
+        self.fetch_output = ""
 
     # ---------- lifecycle ----------
 
@@ -175,8 +176,11 @@ class CloudRunSandbox:
              f"--export-tar={self._tar}", "--", "/bin/bash", "-c", script],
             timeout=timeout,
         )
+        self.fetch_output = _tail(result.as_text(), 1500)
+        if result.exit_code != 0:
+            logger.warning("Fetch sandbox exited %s for %s:\n%s", result.exit_code, self.name, self.fetch_output)
         if not os.path.exists(self._tar):
-            raise RuntimeError(f"Fetch phase produced no workspace. {result.as_text()}")
+            raise RuntimeError(f"Fetch phase produced no workspace. {self.fetch_output}")
         return {"fetch_exit_code": result.exit_code, "timed_out": result.timed_out}
 
     async def start(self) -> None:
@@ -213,7 +217,8 @@ class CloudRunSandbox:
             raise RuntimeError("Sandbox not started")
         script = (
             SANDBOX_ENV
-            + f"cd {REPO_DIR} 2>/dev/null || cd {WORKDIR}; "
+            # Never fall back to the launcher's cwd (/app): that is the agent's own code.
+            + f"cd {REPO_DIR} 2>/dev/null || cd {WORKDIR} 2>/dev/null || exit 97; "
             + "[ -f .venv/bin/activate ] && . .venv/bin/activate; "
             + f"timeout {int(timeout)} /bin/bash -c {shlex.quote(command)}"
         )

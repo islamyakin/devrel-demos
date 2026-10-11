@@ -228,6 +228,12 @@ class CloudRunJudgeAdapter(AgentService):
                 await sandbox.fetch(request.github_url); mark("fetch_s")
                 await sandbox.start(); mark("start_s")
                 facts = await sandbox.verify()
+                if facts["clone_exit_code"] != 0:
+                    # Nothing to judge. Don't let the model grade an empty workspace.
+                    raise RuntimeError(
+                        f"Fetch failed (clone exit {facts['clone_exit_code']}). "
+                        f"{sandbox.fetch_output}"
+                    )
                 facts["injection_markers"] = await scan_injection_markers(sandbox); mark("verify_s")
                 logger.info("Verified facts for %s: %s", request.task_id, json.dumps(facts)[:1000])
 
