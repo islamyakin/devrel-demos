@@ -2,6 +2,7 @@
 
 A fork of [`codelabs/ai-toolkit-lab-2/hackathon-judge`](https://github.com/GoogleCloudPlatform/devrel-demos/tree/main/codelabs/ai-toolkit-lab-2/hackathon-judge)
 that replaces GKE + Agent Sandbox with **Cloud Run sandboxes** (Preview).
+Full architecture, trust boundaries and failure handling: [ARCHITECTURE-CLOUDRUN.md](ARCHITECTURE-CLOUDRUN.md).
 
 ```mermaid
 graph LR
