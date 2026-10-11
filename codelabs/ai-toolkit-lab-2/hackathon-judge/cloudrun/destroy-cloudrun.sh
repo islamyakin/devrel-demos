@@ -17,6 +17,12 @@
 set -uo pipefail
 : "${GOOGLE_CLOUD_PROJECT:?Set GOOGLE_CLOUD_PROJECT}"
 R="${GOOGLE_CLOUD_REGION:-asia-southeast2}"
+# Every gcloud call below targets this project, not whatever `gcloud config` points at.
+export CLOUDSDK_CORE_PROJECT="$GOOGLE_CLOUD_PROJECT"
+if [ "${YES:-false}" != "true" ]; then
+  read -r -p "Delete the Cloud Run judge resources in project $GOOGLE_CLOUD_PROJECT ($R)? [y/N] " a
+  [ "$a" = "y" ] || [ "$a" = "Y" ] || { echo "Aborted."; exit 1; }
+fi
 gcloud beta run worker-pools delete "${AGENT_POOL:-hackathon-judge-agent}" --region="$R" --quiet
 gcloud run services delete "${WEB_SERVICE:-hackathon-judge-web}" --region="$R" --quiet
 for s in "${TASKS_SUBSCRIPTION:-judge-tasks-sub}" "${RESULTS_SUB:-judge-results-sub}"; do gcloud pubsub subscriptions delete "$s" --quiet; done

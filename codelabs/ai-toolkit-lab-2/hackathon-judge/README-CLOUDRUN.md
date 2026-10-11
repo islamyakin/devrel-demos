@@ -108,5 +108,11 @@ GOOGLE_CLOUD_PROJECT=p TASKS_SUBSCRIPTION=s RESULTS_TOPIC=t USE_MOCK_PUBSUB=true
   CLI accepts `--` before the command.
 - `egress_blocked_by_default` only means "curl failed inside the sandbox". The positive control
   (`--allow-egress` reaching GitHub) is the fetch phase of a real submission.
-- Whether `--export-tar` still writes the archive when the fetch script exits non-zero (the script is written to exit 0 to avoid depending on it).
+- Found: from sandboxes in `asia-southeast2`, GitHub's Asian edge IPs (`20.205.243.166`,
+  `20.27.177.113`) never connect, while `140.82.x` and the host container reach everything. DNS
+  returns either, so clones failed at random: git hung, the sandbox was killed after ~150 s, and
+  `--export-tar` failed (`failed to tar container: exit status 128`) or wrote nothing. The fetch script
+  now probes and pins a reachable GitHub IP, and the agent refuses to judge when the clone is missing.
+- `--export-tar` writes nothing usable when the sandbox process is killed. When the script itself
+  exits normally it works (207 MB tar for a 193 MB `node_modules` workspace in 17 s).
 - `gemini-3-flash-preview` is the model the original repo uses. Override with `JUDGE_MODEL`.
