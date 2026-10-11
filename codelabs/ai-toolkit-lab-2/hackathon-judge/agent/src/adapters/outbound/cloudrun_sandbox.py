@@ -113,7 +113,18 @@ async def _run_cli(args: list[str], timeout: float) -> ExecResult:
 FETCH_SCRIPT = r"""
 set -u
 mkdir -p {meta}
-git clone --depth 1 --no-tags -- {url} {repo} > {meta}/clone.log 2>&1
+# Sandbox egress can't reach some GitHub edge IPs that DNS hands out (seen from
+# asia-southeast2: 20.205.243.166, 20.27.177.113; connect hangs until the sandbox
+# is killed), while GitHub's 140.82.x range works. Pin the first IP that connects.
+# ponytail: hardcoded fallbacks, read https://api.github.com/meta if they go stale.
+case {url} in https://github.com/*)
+  for ip in $(getent ahostsv4 github.com | awk '{{print $1}}' | sort -u) 140.82.112.3 140.82.112.4 140.82.121.4; do
+    if curl -s -o /dev/null --connect-timeout 5 --resolve github.com:443:$ip https://github.com/; then
+      git config --global http.curloptResolve github.com:443:$ip; echo "github_ip=$ip" > {meta}/github_ip; break
+    fi
+  done;;
+esac
+timeout 300 git clone --depth 1 --no-tags -- {url} {repo} > {meta}/clone.log 2>&1
 echo $? > {meta}/clone.exit
 cd {repo} 2>/dev/null || exit 0
 
