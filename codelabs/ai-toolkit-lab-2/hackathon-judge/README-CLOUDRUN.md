@@ -97,7 +97,10 @@ GOOGLE_CLOUD_PROJECT=p TASKS_SUBSCRIPTION=s RESULTS_TOPIC=t USE_MOCK_PUBSUB=true
 
 ## Not verified yet (check before relying on it)
 
-- Not deployed end to end. No Docker or GCP access was used to build this fork.
+- Not deployed end to end yet. Verified so far (asia-southeast2, Oct 2026): Cloud Build of all three
+  images, and the web service. `/` serves the React app, `/api/hackathons` returns the seeded rows
+  from BigQuery (so `nginx.cloudrun.conf` keeps the `/api` prefix), and the backend's results
+  subscriber starts cleanly. The agent worker pool and sandboxes are not verified yet.
 - Cloud Run sandboxes are **Preview**. Check that your region supports them (the script defaults to `asia-southeast2`; fall back to `us-central1` if not).
 - `gcloud beta run worker-pools deploy` flags `--instances`, `--cpu`, `--memory` should be confirmed against your gcloud version.
 - Whether `--export-tar` still writes the archive when the fetch script exits non-zero (the script is written to exit 0 to avoid depending on it).
