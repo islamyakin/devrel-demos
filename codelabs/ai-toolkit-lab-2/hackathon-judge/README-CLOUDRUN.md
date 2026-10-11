@@ -100,8 +100,13 @@ GOOGLE_CLOUD_PROJECT=p TASKS_SUBSCRIPTION=s RESULTS_TOPIC=t USE_MOCK_PUBSUB=true
 - Not deployed end to end yet. Verified so far (asia-southeast2, Oct 2026): Cloud Build of all three
   images, and the web service. `/` serves the React app, `/api/hackathons` returns the seeded rows
   from BigQuery (so `nginx.cloudrun.conf` keeps the `/api` prefix), and the backend's results
-  subscriber starts cleanly. The agent worker pool and sandboxes are not verified yet.
-- Cloud Run sandboxes are **Preview**. Check that your region supports them (the script defaults to `asia-southeast2`; fall back to `us-central1` if not).
-- `gcloud beta run worker-pools deploy` flags `--instances`, `--cpu`, `--memory` should be confirmed against your gcloud version.
+  subscriber starts cleanly. The agent worker pool starts and passes `sandbox_self_check`
+  (`launcher_ok` and `egress_blocked_by_default` both true; `sandbox do` takes ~0.1 s). A real
+  submission has not been judged yet.
+- Verified: Cloud Run sandboxes work in `asia-southeast2` on a worker pool, with
+  `--sandbox-launcher --cpu=4 --memory=8Gi --instances=1` (gcloud 584.0.0, beta 2026.09.04), and the
+  CLI accepts `--` before the command.
+- `egress_blocked_by_default` only means "curl failed inside the sandbox". The positive control
+  (`--allow-egress` reaching GitHub) is the fetch phase of a real submission.
 - Whether `--export-tar` still writes the archive when the fetch script exits non-zero (the script is written to exit 0 to avoid depending on it).
 - `gemini-3-flash-preview` is the model the original repo uses. Override with `JUDGE_MODEL`.
