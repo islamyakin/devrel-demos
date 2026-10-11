@@ -71,9 +71,14 @@ bq show --project_id="$GOOGLE_CLOUD_PROJECT" "$BQ_DATASET" >/dev/null 2>&1 \
 sed -e "s/<<YOUR PROJECT ID>>/${GOOGLE_CLOUD_PROJECT}/g" -e "s/<<REGION>>/${GOOGLE_CLOUD_REGION}/g" \
     -e "s/hackathon_judge/${BQ_DATASET}/g" backend/internal/repository/schema.sql \
   | bq --project_id="$GOOGLE_CLOUD_PROJECT" query --use_legacy_sql=false --location="$GOOGLE_CLOUD_REGION"
-sed -e "s/<<YOUR PROJECT ID>>/${GOOGLE_CLOUD_PROJECT}/g" -e "s/hackathon_judge/${BQ_DATASET}/g" \
-    backend/internal/repository/seeds.sql \
-  | bq --project_id="$GOOGLE_CLOUD_PROJECT" query --use_legacy_sql=false --location="$GOOGLE_CLOUD_REGION"
+# Seeds are plain INSERTs: only load them into an empty table so reruns don't duplicate rows.
+SEEDED=$(bq --project_id="$GOOGLE_CLOUD_PROJECT" --format=csv query --use_legacy_sql=false --location="$GOOGLE_CLOUD_REGION" \
+  "SELECT COUNT(*) FROM \`${BQ_DATASET}.hackathons\`" | tail -1)
+if [ "$SEEDED" = "0" ]; then
+  sed -e "s/<<YOUR PROJECT ID>>/${GOOGLE_CLOUD_PROJECT}/g" -e "s/hackathon_judge/${BQ_DATASET}/g" \
+      backend/internal/repository/seeds.sql \
+    | bq --project_id="$GOOGLE_CLOUD_PROJECT" query --use_legacy_sql=false --location="$GOOGLE_CLOUD_REGION"
+fi
 
 log "5/7 Service accounts (least privilege, one per workload)"
 for sa in judge-web judge-agent; do
@@ -95,6 +100,8 @@ gcloud pubsub topics add-iam-policy-binding "$RESULTS_TOPIC" --member="serviceAc
 log "6/7 Building images with Cloud Build (tag: $TAG)"
 gcloud builds submit --config=cloudrun/cloudbuild.cloudrun.yaml \
   --substitutions="_IMAGE_BASE=${IMAGE_BASE},_TAG=${TAG}" .
+
+[ "${BUILD_ONLY:-false}" = "true" ] && { log "BUILD_ONLY=true, skipping deploy"; exit 0; }
 
 log "7/7 Deploying"
 envsubst < cloudrun/web-service.yaml > /tmp/web-service.rendered.yaml
